@@ -1,0 +1,4 @@
+assets/
+grader/__pycache__
+homework/__pycache__
+bundle.py
