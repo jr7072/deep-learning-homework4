@@ -60,12 +60,13 @@ def mlp_training(
 
             metric_store[mode][width] = PlannerMetric()
 
-    loss_func = torch.nn.functional.l1_loss
+    loss_func = torch.nn.functional.mse_loss
 
     print('started training loop...')
     for epoch in range(num_epochs):
 
         reset_metrics(metric_store)
+
         model.train()
         logger.add_scalar('meta/epoch', epoch, global_step=global_step)
 
@@ -108,7 +109,7 @@ def mlp_training(
             )
 
             metric_store['train'][32].add(
-                waypoints_large,
+                waypoints_min,
                 waypoints,
                 waypoints_mask
             )
@@ -120,6 +121,7 @@ def mlp_training(
                 right_tracks,
                 width=general_width
             )
+
             loss_general = loss_func(waypoints_general, waypoints)
             loss_general.backward()
 
@@ -131,7 +133,7 @@ def mlp_training(
             )
 
             metric_store['train'][general_width].add(
-                waypoints_large,
+                waypoints_general,
                 waypoints,
                 waypoints_mask
             )
