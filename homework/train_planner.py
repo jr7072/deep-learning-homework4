@@ -128,7 +128,7 @@ def mlp_training(
 
             # pass a general network
             general_width = general_widths[width_pointer % 4]
-            width_key *= -1
+            width_pointer += 1
             waypoints_general = model(
                 left_tracks,
                 right_tracks,
