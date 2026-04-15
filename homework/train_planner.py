@@ -79,10 +79,6 @@ def mlp_training(
             clean_waypoints_pred = waypoints_pred * batched_waypoints_mask
             loss = loss_func(clean_waypoints_pred, clean_waypoints)
 
-            optim.zero_grad()
-            loss.backward()
-            optim.step()
-
             # log the loss
             logger.add_scalar(
                 'train/loss',
@@ -96,7 +92,8 @@ def mlp_training(
                 waypoints_mask
             )
 
-
+            optim.zero_grad()
+            loss.backward()
             optim.step()
             global_step += 1
         
@@ -192,7 +189,7 @@ def train(
     val_package = load_data('drive_data/val', batch_size=batch_size)
 
     # load optimizer
-    optim = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
+    optim = torch.optim.AdamW(model.parameters(), lr=lr)
 
     # TODO: add evaluator
     mlp_training(
