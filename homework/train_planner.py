@@ -189,7 +189,7 @@ def train(
     val_package = load_data('drive_data/val', batch_size=batch_size)
 
     # load optimizer
-    optim = torch.optim.AdamW(model.parameters(), lr=lr)
+    optim = torch.optim.Adam(model.parameters(), lr=lr)
 
     # TODO: add evaluator
     mlp_training(
