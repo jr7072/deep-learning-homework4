@@ -38,8 +38,7 @@ class MLPPlanner(nn.Module):
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
-        n_layers: int=20,
-        width: int=509
+        layer_sizes: list=[512, 128, 64, 32],
     ):
         """
         Args:
@@ -51,18 +50,15 @@ class MLPPlanner(nn.Module):
         self.n_track = n_track
         self.n_waypoints = n_waypoints
 
-        layers = [
-            torch.nn.Linear(self.n_track * 4, width),
-            torch.nn.LayerNorm(width),
-            torch.nn.GELU()
-        ]
+        layers = []
 
-        for _ in range(n_layers):
+        o = self.n_track * 4
+        for layer in layer_sizes:
 
-            layers.append(RESBlock(width, width))
+            layers.append(RESBlock(o, layer))
+            o = layer
         
-        layers.append(torch.nn.Linear(width, self.n_waypoints * 2))
-
+        layers.append(torch.nn.Linear(o, self.n_waypoints * 2))
         self.model = torch.nn.Sequential(*layers)
 
     def forward(
