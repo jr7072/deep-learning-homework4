@@ -32,11 +32,9 @@ def get_device() -> torch.DeviceObjType:
 
 def reset_metrics(metric_store: dict):
 
-    for mode in metric_store.values():
+    for metric in metric_store.values():
 
-        for metric_obj in mode.values():
-
-            metric_obj.reset()
+        metric.reset()
 
 def mlp_training(
     model: torch.nn.Module,
@@ -51,24 +49,13 @@ def mlp_training(
 
     global_step = 0
 
-    test_widths = [32, 64, 128, 256, 512, 1024]
     metric_store = defaultdict(dict)
 
     for mode in ['train', 'val']:
         
-        for width in test_widths:
-
-            metric_store[mode][width] = PlannerMetric()
+        metric_store[mode] = PlannerMetric()
 
     loss_func = torch.nn.functional.mse_loss
-
-    general_widths = {
-        0: 64,
-        1: 128,
-        2: 256,
-        3: 512
-    }
-    width_pointer = 0
     
     print('started training loop...')
     for epoch in range(num_epochs):
@@ -87,71 +74,28 @@ def mlp_training(
             batched_waypoints_mask = waypoints_mask[..., None]
             clean_waypoints = waypoints * batched_waypoints_mask
 
+            # forward pass
+            waypoints_pred = model(left_tracks, right_tracks)
+            clean_waypoints_pred = waypoints_pred * batched_waypoints_mask
+            loss= loss_func(clean_waypoints_pred, clean_waypoints)
+
             optim.zero_grad()
-            # pass the large network
-            waypoints_large = model(left_tracks, right_tracks, width=1024)
-            clean_waypoints_large = waypoints_large * batched_waypoints_mask
-            loss_large = loss_func(clean_waypoints_large, clean_waypoints)
-            loss_large.backward()
+            loss.backward()
+            optim.step()
 
             # log the loss
             logger.add_scalar(
-                'train_1024/loss',
-                loss_large,
+                'train/loss',
+                loss,
                 global_step=global_step
             )
 
-            metric_store['train'][1024].add(
-                waypoints_large,
+            metric_store['train'].add(
+                waypoints_pred,
                 waypoints,
                 waypoints_mask
             )
 
-            # pass the efficient network
-            waypoints_min = model(left_tracks, right_tracks, width=32)
-            clean_waypoints_min =  waypoints_min * batched_waypoints_mask
-            loss_min = loss_func(clean_waypoints_min, clean_waypoints)
-            loss_min.backward()
-
-            # log the small loss
-            logger.add_scalar(
-                'train_32/loss',
-                loss_min,
-                global_step=global_step
-            )
-
-            metric_store['train'][32].add(
-                waypoints_min,
-                waypoints,
-                waypoints_mask
-            )
-
-            # pass a general network
-            general_width = general_widths[width_pointer % 4]
-            width_pointer += 1
-            waypoints_general = model(
-                left_tracks,
-                right_tracks,
-                width=general_width
-            )
-
-            clean_waypoints_general = waypoints_general * batched_waypoints_mask
-
-            loss_general = loss_func(clean_waypoints_general, clean_waypoints)
-            loss_general.backward()
-
-            # log the general loss
-            logger.add_scalar(
-                f'train_{general_width}/loss',
-                loss_general,
-                global_step=global_step
-            )
-
-            metric_store['train'][general_width].add(
-                waypoints_general,
-                waypoints,
-                waypoints_mask
-            )
 
             optim.step()
             global_step += 1
@@ -166,47 +110,43 @@ def mlp_training(
             batched_waypoints_mask = waypoints_mask[..., None]
             clean_waypoints = waypoints * batched_waypoints_mask
 
-        
-            for width in test_widths:
+            waypoints_pred = model(left_tracks, right_tracks)
+            clean_waypoints_pred = waypoints_pred * batched_waypoints_mask
+            val_loss = loss_func(clean_waypoints_pred, clean_waypoints)
 
-                waypoints_pred = model(left_tracks, right_tracks, width=width)
-                clean_waypoints_pred = waypoints_pred * batched_waypoints_mask
-                val_loss = loss_func(clean_waypoints_pred, clean_waypoints)
+            # log the loss here
+            logger.add_scalar(
+                f'val/loss',
+                val_loss,
+                global_step=global_step
+            )
 
-                # log the loss here
-                logger.add_scalar(
-                    f'val_{width}/loss',
-                    val_loss,
-                    global_step=global_step
-                )
-
-                metric_store['val'][width].add(
-                    waypoints_pred,
-                    waypoints,
-                    waypoints_mask
-                )
+            metric_store['val'].add(
+                waypoints_pred,
+                waypoints,
+                waypoints_mask
+            )
 
         # calculate all the metrics
-        for mode, mode_obj in metric_store.items():
+        for mode, metrics in metric_store.items():
 
-            for width, metrics in mode_obj.items():
 
-                metric_results = metrics.compute()
-                long_error = metric_results['longitudinal_error']
-                lat_error = metric_results['lateral_error']
-                
-                # log the errors here per mode
-                logger.add_scalar(
-                    f'{mode}_{width}/longitudinal_error',
-                    long_error,
-                    global_step=global_step
-                )
+            metric_results = metrics.compute()
+            long_error = metric_results['longitudinal_error']
+            lat_error = metric_results['lateral_error']
+            
+            # log the errors here per mode
+            logger.add_scalar(
+                f'{mode}/longitudinal_error',
+                long_error,
+                global_step=global_step
+            )
 
-                logger.add_scalar(
-                    f'{mode}_{width}/lateral_error',
-                    lat_error,
-                    global_step=global_step
-                )
+            logger.add_scalar(
+                f'{mode}/lateral_error',
+                lat_error,
+                global_step=global_step
+            )
 
         # save model just in case I want to early stop
         if ((epoch + 1) % 10 == 0) or (epoch == num_epochs - 1):

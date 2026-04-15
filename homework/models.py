@@ -8,120 +8,38 @@ INPUT_MEAN = [0.2788, 0.2657, 0.2629]
 INPUT_STD = [0.2064, 0.1944, 0.2252]
 
 
-class ElasticLayerNorm(torch.nn.Module):
-    '''
-        This is the same as layer norm. It adapts elastically to the input
-        it recieves. This integration is for NAS for linear layers during training
-        where sandwhich sampling will be used
-    '''
+class RESBlock(nn.Module):
 
-    def __init__(self, max_in_size: int):
-
-        super().__init__()
-        
-        # no bias will be learned it will proceed the linear layer
-        self.max_in_size = max_in_size
-        self.gamma = torch.nn.Parameter(torch.ones(max_in_size))
-        
-    def forward(self, x: torch.Tensor):
-
-        if x.dim() < 2:
-            x = x[None, ]
-
-        return torch.nn.functional.layer_norm(
-            x, 
-            normalized_shape=(x.shape[-1], ),
-            weight=self.gamma[: x.shape[-1]],
-            bias=None
-        )
-
-
-# create an elastic Linear Layer
-class ElasticLinear(torch.nn.Module):
-    '''
-        This is an elastic linear layer to train multiple subsets
-        of architectures at once.
-    '''
-
-    def __init__(self, max_n_in: int, max_n_out: int) -> None:
+    def __init__(self, in_size: int, out_size: int):
 
         super().__init__()
 
-        # generate the weights and bias
-        weights = torch.nn.Parameter(
-            torch.Tensor(max_n_out, max_n_in),
-            requires_grad=True
-        )
+        trans_layers = [
+            nn.Linear(in_size, out_size, bias=False),
+            nn.LayerNorm(out_size),
+            nn.ReLU()
+        ]
 
-        bias = torch.nn.Parameter(
-            torch.Tensor(max_n_out)
-        )
-        
-        # initialize the weights and bias
-        self.weights = torch.nn.init.kaiming_uniform_(weights)
+        self.trans = nn.Sequential(*trans_layers)
+        self.skip = nn.Identity()
 
-        k = 1 / max_n_in
-        self.bias = torch.nn.init.uniform_(bias, -k, k)
-
-    def forward(self, x: torch.Tensor, width: int) -> torch.Tensor:
-
-        '''
-            passes x through an elastic linear layer
-        '''
-
-        if x.dim() < 2:
-            x = x[None, ] # add the batch dimension if not exist
-
-        in_size = x.shape[-1]
-        
-        sub_weights = self.weights[:width, :in_size]
-        sub_bias = self.bias[:width]
-
-        return torch.nn.functional.linear(x, sub_weights, sub_bias)
-
-
-class ElasticMLPBlock(torch.nn.Module):
-    '''
-        Elastic MLP block for NAS training.
-    '''
-
-    def __init__(self, max_input: int, max_output: int, res=False) -> None:
-
-        '''
-            max_width: the max width that the linear block can go.
-        '''
-
-        super().__init__()
-
-        self.layers = torch.nn.ModuleDict(
-            {
-                'linear': ElasticLinear(max_input, max_output),
-                'norm': ElasticLayerNorm(max_output),
-                'relu': torch.nn.ReLU()
-            }
-        )
-        
-        self.res = res
-        self.skip = torch.nn.Identity()
+        if in_size != out_size:
+            self.skip = nn.Linear(in_size, out_size)
     
-    def forward(self, x: torch.Tensor, width: int):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
 
-        y = self.layers['linear'](x, width)
-        y = self.layers['norm'](y)
-        y = self.layers['relu'](y)
+        trans_output = self.trans(x)
+        skip_output = self.skip(x)
 
-        if self.res:
-            return y + self.skip(x)
-            
-        return y
-    
+        return trans_output + skip_output
+
 class MLPPlanner(nn.Module):
     def __init__(
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
         n_layers: int=4,
-        max_width: int=1024
+        width: int=1024
     ):
         """
         Args:
@@ -133,16 +51,19 @@ class MLPPlanner(nn.Module):
         self.n_track = n_track
         self.n_waypoints = n_waypoints
 
-        mlp_layers = []
-        mlp_layers.append(ElasticMLPBlock(self.n_track * 4, max_width))
+        layers = [
+            torch.nn.Linear(self.n_track * 4, width),
+            torch.nn.LayerNorm(width),
+            torch.nn.ReLU()
+        ]
 
         for _ in range(n_layers):
-            
-            mlp_layers.append(ElasticMLPBlock(max_width, max_width, res=True))
 
-        mlp_layers.append(ElasticMLPBlock(max_width, self.n_waypoints * 2))
+            layers.append(RESBlock(width, width))
+        
+        layers.append(torch.nn.Linear(width, self.n_waypoints * 2))
 
-        self.layers = torch.nn.ModuleList(mlp_layers)
+        self.model = torch.nn.Sequential(*layers)
 
     def forward(
         self,
@@ -164,14 +85,10 @@ class MLPPlanner(nn.Module):
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
 
-        width = kwargs.get('width', 256)
         track_left_flat = track_left.reshape(-1, self.n_track * 2)
         track_right_flat = track_right.reshape(-1, self.n_track * 2)
-        y = torch.concat((track_left_flat, track_right_flat), dim=1)
-
-        for layer in self.layers:
-
-            y = layer(y, width)
+        x = torch.concat((track_left_flat, track_right_flat), dim=1)
+        y = self.model(x)
 
         return y.reshape(-1, self.n_waypoints, 2)
 
