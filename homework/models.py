@@ -38,8 +38,8 @@ class MLPPlanner(nn.Module):
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
-        n_layers: int=4,
-        width: int=1024
+        n_layers: int=20,
+        width: int=509
     ):
         """
         Args:
