@@ -17,7 +17,7 @@ class RESBlock(nn.Module):
         trans_layers = [
             nn.Linear(in_size, out_size, bias=False),
             nn.LayerNorm(out_size),
-            nn.ReLU()
+            nn.LeakyReLU()
         ]
 
         self.trans = nn.Sequential(*trans_layers)
@@ -54,7 +54,7 @@ class MLPPlanner(nn.Module):
         layers = [
             torch.nn.Linear(self.n_track * 4, width),
             torch.nn.LayerNorm(width),
-            torch.nn.ReLU()
+            torch.nn.LeakyReLU()
         ]
 
         for _ in range(n_layers):
