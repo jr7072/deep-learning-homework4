@@ -76,11 +76,14 @@ def mlp_training(
             right_tracks = train_package['track_right'].to(device)
             waypoints = train_package['waypoints'].to(device)
             waypoints_mask = train_package['waypoints_mask'].to(device)
+            batched_waypoints_mask = waypoints_mask[..., None]
+            clean_waypoints = waypoints * batched_waypoints_mask
 
             optim.zero_grad()
             # pass the large network
             waypoints_large = model(left_tracks, right_tracks, width=256)
-            loss_large = loss_func(waypoints_large, waypoints)
+            clean_waypoints_large = waypoints_large * batched_waypoints_mask
+            loss_large = loss_func(clean_waypoints_large, clean_waypoints)
             loss_large.backward()
 
             # log the loss
@@ -98,7 +101,8 @@ def mlp_training(
 
             # pass the efficient network
             waypoints_min = model(left_tracks, right_tracks, width=32)
-            loss_min = loss_func(waypoints_min, waypoints)
+            clean_waypoints_min =  waypoints_min * batched_waypoints_mask
+            loss_min = loss_func(clean_waypoints_min, clean_waypoints)
             loss_min.backward()
 
             # log the small loss
@@ -122,7 +126,9 @@ def mlp_training(
                 width=general_width
             )
 
-            loss_general = loss_func(waypoints_general, waypoints)
+            clean_waypoints_general = waypoints_general * batched_waypoints_mask
+
+            loss_general = loss_func(clean_waypoints_general, clean_waypoints)
             loss_general.backward()
 
             # log the general loss
@@ -148,12 +154,15 @@ def mlp_training(
             right_tracks = val_package['track_right'].to(device)
             waypoints = val_package['waypoints'].to(device)
             waypoints_mask = val_package['waypoints_mask'].to(device)
+            batched_waypoints_mask = waypoints_mask[..., None]
+            clean_waypoints = waypoints * batched_waypoints_mask
 
         
             for width in test_widths:
 
                 waypoints_pred = model(left_tracks, right_tracks, width=width)
-                val_loss = loss_func(waypoints_pred, waypoints)
+                clean_waypoints_pred = waypoints_pred * batched_waypoints_mask
+                val_loss = loss_func(clean_waypoints_pred, clean_waypoints)
 
                 # log the loss here
                 logger.add_scalar(
