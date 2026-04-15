@@ -62,6 +62,12 @@ def mlp_training(
 
     loss_func = torch.nn.functional.mse_loss
 
+    general_widths = {
+        -1: 64,
+        1: 128
+    }
+    width_key = -1
+    
     print('started training loop...')
     for epoch in range(num_epochs):
 
@@ -119,7 +125,8 @@ def mlp_training(
             )
 
             # pass a general network
-            general_width = np.random.choice([64, 128])
+            general_width = general_widths[width_key]
+            width_key *= -1
             waypoints_general = model(
                 left_tracks,
                 right_tracks,
