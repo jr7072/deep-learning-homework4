@@ -96,7 +96,7 @@ def mlp_training(
 
             # log the loss
             logger.add_scalar(
-                'train_256/loss',
+                'train_1024/loss',
                 loss_large,
                 global_step=global_step
             )
