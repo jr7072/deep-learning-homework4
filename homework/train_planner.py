@@ -51,7 +51,7 @@ def mlp_training(
 
     global_step = 0
 
-    test_widths = [32, 64, 128, 256]
+    test_widths = [32, 64, 128, 256, 512, 1024]
     metric_store = defaultdict(dict)
 
     for mode in ['train', 'val']:
@@ -63,10 +63,12 @@ def mlp_training(
     loss_func = torch.nn.functional.mse_loss
 
     general_widths = {
-        -1: 64,
-        1: 128
+        0: 64,
+        1: 128,
+        2: 256,
+        3: 512
     }
-    width_key = -1
+    width_pointer = 0
     
     print('started training loop...')
     for epoch in range(num_epochs):
@@ -87,7 +89,7 @@ def mlp_training(
 
             optim.zero_grad()
             # pass the large network
-            waypoints_large = model(left_tracks, right_tracks, width=256)
+            waypoints_large = model(left_tracks, right_tracks, width=1024)
             clean_waypoints_large = waypoints_large * batched_waypoints_mask
             loss_large = loss_func(clean_waypoints_large, clean_waypoints)
             loss_large.backward()
@@ -99,7 +101,7 @@ def mlp_training(
                 global_step=global_step
             )
 
-            metric_store['train'][256].add(
+            metric_store['train'][1024].add(
                 waypoints_large,
                 waypoints,
                 waypoints_mask
@@ -125,7 +127,7 @@ def mlp_training(
             )
 
             # pass a general network
-            general_width = general_widths[width_key]
+            general_width = general_widths[width_pointer % 4]
             width_key *= -1
             waypoints_general = model(
                 left_tracks,

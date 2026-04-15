@@ -121,7 +121,7 @@ class MLPPlanner(nn.Module):
         n_track: int = 10,
         n_waypoints: int = 3,
         n_layers: int=4,
-        max_width: int=256
+        max_width: int=1024
     ):
         """
         Args:
