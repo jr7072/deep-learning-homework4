@@ -120,7 +120,7 @@ class MLPPlanner(nn.Module):
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
-        n_layers: int=10,
+        n_layers: int=4,
         max_width: int=256
     ):
         """
