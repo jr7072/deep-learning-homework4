@@ -190,6 +190,7 @@ def train(
 
     # load optimizer
     optim = torch.optim.Adam(model.parameters(), lr=lr)
+    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, 'min')
 
     # TODO: add evaluator
     mlp_training(
@@ -198,7 +199,7 @@ def train(
         val_package,
         num_epochs,
         logger,
-        optim,
+        sched,
         device,
         log_dir
     )
