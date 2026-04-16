@@ -125,7 +125,7 @@ def mlp_training(
                 waypoints_mask
             )
         
-        sched.step(val_loss)
+        sched.step(val_loss.detach())
 
         # calculate all the metrics
         for mode, metrics in metric_store.items():
