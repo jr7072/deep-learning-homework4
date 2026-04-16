@@ -56,7 +56,7 @@ def mlp_training(
         
         metric_store[mode] = PlannerMetric()
 
-    loss_func = torch.nn.functional.mse_loss
+    loss_func = torch.nn.functional.l1_loss
     
     print('started training loop...')
     for epoch in range(num_epochs):
