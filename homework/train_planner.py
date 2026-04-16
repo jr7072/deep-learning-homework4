@@ -44,7 +44,8 @@ def mlp_training(
     logger,
     optim,
     device,
-    log_dir
+    log_dir,
+    sched
 ):
 
     global_step = 0
@@ -123,6 +124,8 @@ def mlp_training(
                 waypoints,
                 waypoints_mask
             )
+        
+        sched.step(val_loss)
 
         # calculate all the metrics
         for mode, metrics in metric_store.items():
@@ -199,9 +202,10 @@ def train(
         val_package,
         num_epochs,
         logger,
-        sched,
+        optim,
         device,
-        log_dir
+        log_dir,
+        sched
     )
 
 
