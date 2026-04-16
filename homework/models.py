@@ -31,7 +31,7 @@ class RESBlock(nn.Module):
         trans_output = self.trans(x)
         skip_output = self.skip(x)
 
-        return trans_output
+        return trans_output + skip_output
 
 class MLPPlanner(nn.Module):
     def __init__(
