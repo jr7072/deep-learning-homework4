@@ -38,7 +38,7 @@ class MLPPlanner(nn.Module):
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
-        layer_sizes: list=[2000, 1000, 400, 200],
+        layer_sizes: list=[1164, 100, 50, 10],
     ):
         """
         Args:

@@ -80,6 +80,10 @@ def mlp_training(
             clean_waypoints_pred = waypoints_pred * batched_waypoints_mask
             loss = loss_func(clean_waypoints_pred, clean_waypoints)
 
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
+
             # log the loss
             logger.add_scalar(
                 'train/loss',
@@ -93,39 +97,38 @@ def mlp_training(
                 waypoints_mask
             )
 
-            optim.zero_grad()
-            loss.backward()
-            optim.step()
             global_step += 1
         
-        model.eval()
-        for val_package in val_data:
+        with torch.no_grad():
+            
+            model.eval()
+            for val_package in val_data:
 
-            left_tracks = val_package['track_left'].to(device)
-            right_tracks = val_package['track_right'].to(device)
-            waypoints = val_package['waypoints'].to(device)
-            waypoints_mask = val_package['waypoints_mask'].to(device)
-            batched_waypoints_mask = waypoints_mask[..., None]
-            clean_waypoints = waypoints * batched_waypoints_mask
+                left_tracks = val_package['track_left'].to(device)
+                right_tracks = val_package['track_right'].to(device)
+                waypoints = val_package['waypoints'].to(device)
+                waypoints_mask = val_package['waypoints_mask'].to(device)
+                batched_waypoints_mask = waypoints_mask[..., None]
+                clean_waypoints = waypoints * batched_waypoints_mask
 
-            waypoints_pred = model(left_tracks, right_tracks)
-            clean_waypoints_pred = waypoints_pred * batched_waypoints_mask
-            val_loss = loss_func(clean_waypoints_pred, clean_waypoints)
+                waypoints_pred = model(left_tracks, right_tracks)
+                clean_waypoints_pred = waypoints_pred * batched_waypoints_mask
+                val_loss = loss_func(clean_waypoints_pred, clean_waypoints)
 
-            # log the loss here
-            logger.add_scalar(
-                f'val/loss',
-                val_loss,
-                global_step=global_step
-            )
+                # log the loss here
+                logger.add_scalar(
+                    f'val/loss',
+                    val_loss,
+                    global_step=global_step
+                )
 
-            metric_store['val'].add(
-                waypoints_pred,
-                waypoints,
-                waypoints_mask
-            )
-        
-        sched.step(val_loss.detach())
+                metric_store['val'].add(
+                    waypoints_pred,
+                    waypoints,
+                    waypoints_mask
+                )
+            
+            sched.step(val_loss)
 
         # calculate all the metrics
         for mode, metrics in metric_store.items():
