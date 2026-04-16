@@ -86,7 +86,7 @@ class MLPPlanner(nn.Module):
         x = torch.concat((track_left_flat, track_right_flat), dim=1)
 
         # normalize the inputs
-        x = (x - x.mean(dim=1)[..., None]) / torch.var(x, dim=1)[..., None]
+        x = (x - x.mean(dim=1)[..., None]) / torch.std(x, dim=1)[..., None]
         y = self.model(x)
 
         return y.reshape(-1, self.n_waypoints, 2)
