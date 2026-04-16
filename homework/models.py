@@ -17,7 +17,7 @@ class RESBlock(nn.Module):
         trans_layers = [
             nn.Linear(in_size, out_size, bias=False),
             nn.LayerNorm(out_size),
-            nn.GELU()
+            nn.ReLU()
         ]
 
         self.trans = nn.Sequential(*trans_layers)
@@ -31,14 +31,14 @@ class RESBlock(nn.Module):
         trans_output = self.trans(x)
         skip_output = self.skip(x)
 
-        return trans_output + skip_output
+        return trans_output
 
 class MLPPlanner(nn.Module):
     def __init__(
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
-        layer_sizes: list=[1024, 1024, 512, 512, 128, 128, 64, 64, 32, 32, 16, 16],
+        layer_sizes: list=[1024, 512, 256, 128, 64, 32],
     ):
         """
         Args:
