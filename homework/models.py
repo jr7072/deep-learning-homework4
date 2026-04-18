@@ -34,7 +34,7 @@ class ConvBlock(torch.nn.Module):
             torch.nn.BatchNorm2d(
                 out_channels
             ),
-            torch.nn.ReLU6()
+            torch.nn.ReLU()
         ]
 
         self.block = torch.nn.Sequential(*layers)
@@ -100,7 +100,7 @@ class UpsampleBlock(torch.nn.Module):
                 stride=2
             ),
             torch.nn.BatchNorm2d(out_channels),
-            torch.nn.ReLU6()
+            torch.nn.ReLU()
         ]
 
         if include_dropout:
@@ -336,10 +336,11 @@ class CNNPlanner(torch.nn.Module):
         self.waypoint_head = torch.nn.Sequential(
             ConvBlock(
                 current_output_size,
-                1,
+                1280,
                 kernel_size=1
             ),
-            torch.nn.AdaptiveAvgPool2d((self.n_waypoints, 2))
+            torch.nn.AdaptiveAvgPool2d(1),
+            torch.nn.Conv2d(1280, self.n_waypoints * 2, kernel_size=1)
         )
     
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
