@@ -8,6 +8,112 @@ INPUT_MEAN = [0.2788, 0.2657, 0.2629]
 INPUT_STD = [0.2064, 0.1944, 0.2252]
 
 
+class ConvBlock(torch.nn.Module):
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        padding: int=0,
+        stride: int=1,
+        groups: int=1
+    ):
+        
+        super().__init__()
+
+        layers = [
+            torch.nn.Conv2d(
+                in_channels,
+                out_channels,
+                kernel_size=kernel_size,
+                padding=padding,
+                stride=stride,
+                groups=groups
+            ),
+            torch.nn.BatchNorm2d(
+                out_channels
+            ),
+            torch.nn.ReLU6()
+        ]
+
+        self.block = torch.nn.Sequential(*layers)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.block(x)
+
+
+class EncoderBlock(torch.nn.Module):
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        include_dropout: bool=False
+    ):
+        
+        super().__init__()
+        
+        layers = [
+            ConvBlock(
+                in_channels,
+                out_channels,
+                kernel_size=3,
+                stride=2,
+                padding=1
+            ),
+            ConvBlock(
+                out_channels,
+                out_channels,
+                kernel_size=3,
+                padding=1,
+            )
+        ]
+
+        if include_dropout:
+            layers.append(torch.nn.Dropout(p=.2))
+
+        self.block = torch.nn.Sequential(*layers)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.block(x)
+
+
+class UpsampleBlock(torch.nn.Module):
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        include_dropout: bool=False
+    ):
+        
+        super().__init__()
+
+        layers = [
+            torch.nn.ConvTranspose2d(
+                in_channels,
+                out_channels,
+                kernel_size=3,
+                padding=1,
+                output_padding=1,
+                stride=2
+            ),
+            torch.nn.BatchNorm2d(out_channels),
+            torch.nn.ReLU6()
+        ]
+
+        if include_dropout:
+            layers.append(
+                torch.nn.Dropout(p=.2)
+            )
+
+        self.block = torch.nn.Sequential(*layers)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor: 
+        return self.block(x)
+
+
 class RESBlock(nn.Module):
 
     def __init__(self, in_size: int, out_size: int):
@@ -129,29 +235,161 @@ class TransformerPlanner(nn.Module):
 
 
 class CNNPlanner(torch.nn.Module):
+
     def __init__(
         self,
-        n_waypoints: int = 3,
+        in_channels: int = 3,
+        num_classes: int = 3,
+        n_waypoints: int=3
     ):
+        """
+        A single model that performs segmentation and depth regression
+
+        Args:
+            in_channels: int, number of input channels
+            num_classes: int
+        """
         super().__init__()
 
-        self.n_waypoints = n_waypoints
+        self.register_buffer("input_mean", torch.as_tensor(INPUT_MEAN))
+        self.register_buffer("input_std", torch.as_tensor(INPUT_STD))
 
-        self.register_buffer("input_mean", torch.as_tensor(INPUT_MEAN), persistent=False)
-        self.register_buffer("input_std", torch.as_tensor(INPUT_STD), persistent=False)
+        # first conv layer
+        self.first_layer = ConvBlock(
+            in_channels,
+            32,
+            kernel_size=3,
+            padding=1
+        )
 
-    def forward(self, image: torch.Tensor, **kwargs) -> torch.Tensor:
+        # encoding layers
+        self.encoder_layers = torch.nn.ModuleList()
+        current_output_size = 32
+        encoding_layers = 3
+
+        for layer in range(encoding_layers):
+
+            include_dropout = False
+
+            if layer == (encoding_layers - 1):
+                include_dropout = True
+
+            self.encoder_layers.append(
+                EncoderBlock(
+                    current_output_size,
+                    current_output_size * 2,
+                    include_dropout=include_dropout
+                )
+            )
+
+            current_output_size *= 2
+
+        
+        # bottleneck layers
+        self.bottleneck_layers = [
+            ConvBlock(
+                current_output_size,
+                current_output_size * 2,
+                kernel_size=3,
+                padding=1
+            ),
+            torch.nn.Dropout(p=.5),
+            ConvBlock(
+                current_output_size * 2,
+                current_output_size,
+                kernel_size=3,
+                padding=1
+            )
+        ]
+
+        self.bottleneck = torch.nn.Sequential(*self.bottleneck_layers)
+        
+        # define decode layers
+        self.decode_layers = torch.nn.ModuleList()
+        for i, _ in enumerate(self.encoder_layers):
+
+            include_dropout = False
+
+            if i == (encoding_layers - 1):
+                include_dropout = True
+
+            first_decode_layer = ConvBlock(
+                current_output_size,
+                current_output_size,
+                kernel_size=3,
+                padding=1
+            )
+
+            upsample_layer = UpsampleBlock(
+                current_output_size * 2,
+                current_output_size // 2,
+                include_dropout
+            )
+
+            decode_package = torch.nn.ModuleList([first_decode_layer, upsample_layer])
+            self.decode_layers.append(decode_package)
+
+            current_output_size //= 2
+
+        # output transformations
+        self.waypoint_head = torch.nn.Sequential(
+            ConvBlock(
+                current_output_size,
+                1,
+                kernel_size=1
+            ),
+            torch.nn.AdaptiveAvgPool2d((n_waypoints, 2))
+        )
+    
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
+        Used in training, takes an image and returns raw logits and raw depth.
+        This is what the loss functions use as input.
+
         Args:
-            image (torch.FloatTensor): shape (b, 3, h, w) and vals in [0, 1]
+            x (torch.FloatTensor): image with shape (b, 3, h, w) and vals in [0, 1]
 
         Returns:
-            torch.FloatTensor: future waypoints with shape (b, n, 2)
+            tuple of (torch.FloatTensor, torch.FloatTensor):
+                - logits (b, num_classes, h, w)
+                - depth (b, h, w)
         """
-        x = image
-        x = (x - self.input_mean[None, :, None, None]) / self.input_std[None, :, None, None]
+        # optional: normalizes the input
+        z = (x - self.input_mean[None, :, None, None]) / self.input_std[None, :, None, None]
 
-        raise NotImplementedError
+        # first full convolution
+        current_map = self.first_layer(z)
+        
+        # encoder layers
+        encoder_feature_maps = list()
+        for encoder in self.encoder_layers:
+
+            encoder_feature_map = encoder(current_map)
+
+            # save these for res connections between decoder and encoder
+            encoder_feature_maps.append(encoder_feature_map)
+            current_map = encoder_feature_map
+        
+        # bottleneck
+        x = self.bottleneck(current_map)
+
+        zip_decode_iter = zip(
+            self.decode_layers,
+            reversed(encoder_feature_maps) # iterate through encoder map stack
+        )
+        # decode layers
+        for (fl, upsample), encoder_feature_map in zip_decode_iter:
+            
+            # concat the first layer with the encoder map
+            x = torch.concat([fl(x), encoder_feature_map], dim=1)
+
+            # upsample the concatenation
+            x = upsample(x)
+
+        # output transformation heads
+        waypoints = self.waypoint_head(x)
+
+        return waypoints
 
 
 MODEL_FACTORY = {
