@@ -239,7 +239,6 @@ class CNNPlanner(torch.nn.Module):
     def __init__(
         self,
         in_channels: int = 3,
-        num_classes: int = 3,
         n_waypoints: int=3
     ):
         """
@@ -331,6 +330,8 @@ class CNNPlanner(torch.nn.Module):
 
             current_output_size //= 2
 
+        self.n_waypoints = n_waypoints
+
         # output transformations
         self.waypoint_head = torch.nn.Sequential(
             ConvBlock(
@@ -338,7 +339,7 @@ class CNNPlanner(torch.nn.Module):
                 1,
                 kernel_size=1
             ),
-            torch.nn.AdaptiveAvgPool2d((n_waypoints, 2))
+            torch.nn.AdaptiveAvgPool2d((self.n_waypoints, 2))
         )
     
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -387,7 +388,7 @@ class CNNPlanner(torch.nn.Module):
             x = upsample(x)
 
         # output transformation heads
-        waypoints = self.waypoint_head(x)
+        waypoints = self.waypoint_head(x).reshape(-1, self.n_waypoints, 2)
 
         return waypoints
 
