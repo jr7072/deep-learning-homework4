@@ -54,7 +54,7 @@ def cnn_training(
     for mode in ['train', 'val']:
         metric_store[mode] = PlannerMetric()
 
-    loss_func = torch.nn.functional.mse_loss
+    loss_func = torch.nn.functional.l1_loss
 
     # load optimizer
     optim = torch.optim.AdamW(model.parameters(), lr=lr)
