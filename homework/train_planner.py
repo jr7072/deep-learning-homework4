@@ -57,7 +57,7 @@ def cnn_training(
     loss_func = torch.nn.functional.l1_loss
 
     # load optimizer
-    optim = torch.optim.AdamW(model.parameters(), lr=lr)
+    optim = torch.optim.Adam(model.parameters(), lr=lr)
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, 'min', patience=5)
     
     print('started training loop...')
