@@ -252,6 +252,7 @@ class CNNPlanner(torch.nn.Module):
 
         self.register_buffer("input_mean", torch.as_tensor(INPUT_MEAN))
         self.register_buffer("input_std", torch.as_tensor(INPUT_STD))
+        self.n_waypoints = n_waypoints
 
         # first conv layer
         self.first_layer = ConvBlock(
@@ -261,17 +262,13 @@ class CNNPlanner(torch.nn.Module):
             padding=1
         )
 
-        # encoding layers
         self.encoder_layers = torch.nn.ModuleList()
         current_output_size = 32
         encoding_layers = 3
 
-        for layer in range(encoding_layers):
+        for _ in range(encoding_layers):
 
             include_dropout = False
-
-            if layer == (encoding_layers - 1):
-                include_dropout = True
 
             self.encoder_layers.append(
                 EncoderBlock(
@@ -283,65 +280,32 @@ class CNNPlanner(torch.nn.Module):
 
             current_output_size *= 2
 
-        
-        # bottleneck layers
-        self.bottleneck_layers = [
-            ConvBlock(
-                current_output_size,
-                current_output_size * 2,
-                kernel_size=3,
-                padding=1
-            ),
-            torch.nn.Dropout(p=.5),
-            ConvBlock(
-                current_output_size * 2,
-                current_output_size,
-                kernel_size=3,
-                padding=1
-            )
-        ]
-
-        self.bottleneck = torch.nn.Sequential(*self.bottleneck_layers)
-        
-        # define decode layers
-        self.decode_layers = torch.nn.ModuleList()
-        for i, _ in enumerate(self.encoder_layers):
-
-            include_dropout = False
-
-            if i == (encoding_layers - 1):
-                include_dropout = True
-
-            first_decode_layer = ConvBlock(
-                current_output_size,
-                current_output_size,
-                kernel_size=3,
-                padding=1
-            )
-
-            upsample_layer = UpsampleBlock(
-                current_output_size * 2,
-                current_output_size // 2,
-                include_dropout
-            )
-
-            decode_package = torch.nn.ModuleList([first_decode_layer, upsample_layer])
-            self.decode_layers.append(decode_package)
-
-            current_output_size //= 2
-
-        self.n_waypoints = n_waypoints
+        self.encoder_output_size = current_output_size
+        self.encoder_average_pool = torch.nn.AdaptiveAvgPool2d(1)
 
         # output transformations
-        self.waypoint_head = torch.nn.Sequential(
-            ConvBlock(
-                current_output_size,
-                1280,
-                kernel_size=1
-            ),
-            torch.nn.AdaptiveAvgPool2d(1),
-            torch.nn.Conv2d(1280, self.n_waypoints * 2, kernel_size=1)
+        waypoint_layers_args = [1164, 100, 50, 10]
+        waypoint_layers = []
+
+        o = current_output_size
+        for layer_arg in waypoint_layers_args:
+            waypoint_layers.append(
+                RESBlock(
+                    o,
+                    layer_arg
+                )
+            )
+
+            o = layer_arg
+        
+        waypoint_layers.append(
+            torch.nn.Linear(o, self.n_waypoints * 2)
         )
+
+        self.waypoint_head = torch.nn.Sequential(
+            *waypoint_layers
+        )
+
     
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -362,34 +326,16 @@ class CNNPlanner(torch.nn.Module):
         # first full convolution
         current_map = self.first_layer(z)
         
-        # encoder layers
-        encoder_feature_maps = list()
         for encoder in self.encoder_layers:
 
             encoder_feature_map = encoder(current_map)
-
-            # save these for res connections between decoder and encoder
-            encoder_feature_maps.append(encoder_feature_map)
             current_map = encoder_feature_map
         
-        # bottleneck
-        x = self.bottleneck(current_map)
-
-        zip_decode_iter = zip(
-            self.decode_layers,
-            reversed(encoder_feature_maps) # iterate through encoder map stack
-        )
-        # decode layers
-        for (fl, upsample), encoder_feature_map in zip_decode_iter:
-            
-            # concat the first layer with the encoder map
-            x = torch.concat([fl(x), encoder_feature_map], dim=1)
-
-            # upsample the concatenation
-            x = upsample(x)
+        average_map = self.encoder_average_pool(current_map)
+        flat_map = average_map.reshape(-1, self.encoder_output_size)
 
         # output transformation heads
-        waypoints = self.waypoint_head(x).reshape(-1, self.n_waypoints, 2)
+        waypoints = self.waypoint_head(flat_map).reshape(-1, self.n_waypoints, 2)
 
         return waypoints
 
