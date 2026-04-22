@@ -8,6 +8,21 @@ INPUT_MEAN = [0.2788, 0.2657, 0.2629]
 INPUT_STD = [0.2064, 0.1944, 0.2252]
 
 
+class PositionalEmbedding(torch.nn.Module):
+
+    def __init__(self, embedding_size: int=150):
+
+        super().__init__()
+
+        self.exponential = (torch.arange(0, embedding_size, 2) * -2) / embedding_size
+        self.freq_denom = torch.pow(10000, self.exponential)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        freq = x[..., None] * self.freq_denom[None, ...]
+        return torch.concat([torch.sin(freq), torch.cos(freq)], dim=-1)
+
+
 class ConvBlock(torch.nn.Module):
 
     def __init__(
