@@ -373,8 +373,7 @@ class TransformerPlanner(nn.Module):
                                 d_model,
                                 nhead=n_heads,
                                 batch_first=True,
-                                dim_feedforward=4 * d_model,
-                                norm_first=True
+                                dim_feedforward=4 * d_model
                             )
         
         # prenorm decoder_layer
@@ -382,8 +381,7 @@ class TransformerPlanner(nn.Module):
                                 d_model,
                                 nhead=n_heads,
                                 batch_first=True,
-                                dim_feedforward=4 * d_model,
-                                norm_first=True
+                                dim_feedforward=4 * d_model
                             )
 
         self.encoder = torch.nn.TransformerEncoder(
@@ -411,7 +409,7 @@ class TransformerPlanner(nn.Module):
         self,
         track_left: torch.Tensor,
         track_right: torch.Tensor,
-        **kwargs,
+        **kwargs
     ) -> torch.Tensor:
         """
         Predicts waypoints from the left and right boundaries of the track.
