@@ -14,8 +14,9 @@ class PositionalEmbedding(torch.nn.Module):
 
         super().__init__()
 
-        self.exponential = (torch.arange(0, embedding_size, 2) * -2) / embedding_size
-        self.freq_denom = torch.pow(10000, self.exponential)
+        exponential = (torch.arange(0, embedding_size, 2) * -2) / embedding_size
+        freq_denom = torch.pow(10000, exponential)
+        self.register_buffer('freq_denom', freq_denom)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
@@ -230,7 +231,7 @@ class TransformerPlanner(nn.Module):
         waypoint_tokens = torch.arange(self.n_waypoints * 2)
         self.register_buffer('waypoint_tokens', waypoint_tokens)
 
-        self.lane_encoder = torch.nn.Linear(2, d_model)
+        self.lane_encoder = PositionalEmbedding(d_model)
         self.query_embed = nn.Embedding(n_waypoints * 2, d_model)
 
         trans_layer = torch.nn.TransformerDecoderLayer(
@@ -261,17 +262,36 @@ class TransformerPlanner(nn.Module):
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
         
-        # concat the left and right tracks and embed
-        track = torch.concat([track_left, track_right], dim=1)
-        encoded_tracks = self.lane_encoder(track)
+        # generate embeddings for left track
+        track_left_x = track_left[:, :, 0]
+        track_left_y = track_left[:, :, 1]
+        track_left_x_embedding = self.lane_encoder(track_left_x)
+        track_left_y_embedding = self.lane_encoder(track_left_y)
+
+        # generate embeddings for right track
+        track_right_x = track_right[:, :, 0]
+        track_right_y = track_right[:, :, 1]
+        track_right_x_embedding = self.lane_encoder(track_right_x)
+        track_right_y_embedding = self.lane_encoder(track_right_y)
+
+        # create full embedding
+        track_embedding = torch.concat(
+            [
+                track_left_x_embedding,
+                track_left_y_embedding,
+                track_right_x_embedding,
+                track_right_y_embedding
+            ],
+            dim=-2
+        )
 
         # generate waypoint embeddings
-        batch_size = track.shape[0]
+        batch_size = track_embedding.shape[0]
         waypoint_token_batch = self.waypoint_tokens.broadcast_to((batch_size, -1))
         waypoint_embeddings = self.query_embed(waypoint_token_batch)
 
-        # forward pass
-        y = self.transformer(waypoint_embeddings, encoded_tracks)
+        # forward cross attention
+        y = self.transformer(waypoint_embeddings, track_embedding)
 
         # post processing
         y_avg = y.mean(dim=-1)
