@@ -154,6 +154,7 @@ class RESBlock(nn.Module):
 
         return trans_output + skip_output
 
+
 class MLPPlanner(nn.Module):
     def __init__(
         self,
@@ -219,13 +220,25 @@ class TransformerPlanner(nn.Module):
         n_track: int = 10,
         n_waypoints: int = 3,
         d_model: int = 64,
+        n_heads: int = 4,
+        n_layers: int = 2
     ):
         super().__init__()
 
         self.n_track = n_track
         self.n_waypoints = n_waypoints
+        waypoint_tokens = torch.arange(self.n_waypoints * 2)
+        self.register_buffer('waypoint_tokens', waypoint_tokens)
 
-        self.query_embed = nn.Embedding(n_waypoints, d_model)
+        self.lane_encoder = torch.nn.Linear(2, d_model)
+        self.query_embed = nn.Embedding(n_waypoints * 2, d_model)
+
+        trans_layer = torch.nn.TransformerDecoderLayer(
+                                d_model,
+                                nhead=n_heads,
+                                batch_first=True
+                            )
+        self.transformer = torch.nn.TransformerDecoder(trans_layer, n_layers)
 
     def forward(
         self,
@@ -246,8 +259,24 @@ class TransformerPlanner(nn.Module):
         Returns:
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
-        raise NotImplementedError
+        
+        # concat the left and right tracks and embed
+        track = torch.concat([track_left, track_right], dim=1)
+        encoded_tracks = self.lane_encoder(track)
 
+        # generate waypoint embeddings
+        batch_size = track.shape[0]
+        waypoint_token_batch = self.waypoint_tokens.broadcast_to((batch_size, -1))
+        waypoint_embeddings = self.query_embed(waypoint_token_batch)
+
+        # forward pass
+        y = self.transformer(waypoint_embeddings, encoded_tracks)
+
+        # post processing
+        y_avg = y.mean(dim=-1)
+
+        return y_avg.reshape(-1, self.n_waypoints, 2)
+    
 
 class CNNPlanner(torch.nn.Module):
 

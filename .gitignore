@@ -4,3 +4,5 @@ scratch_notebook.ipynb
 drive_data/
 bundle.py
 mlp_planner/
+cnn_planner/
+transformer_planner/
