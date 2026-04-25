@@ -213,6 +213,40 @@ class MLPPlanner(nn.Module):
         y = self.model(x)
 
         return y.reshape(-1, self.n_waypoints, 2)
+    
+
+class PerceiverBlock(torch.nn.Module):
+
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        trans_layer: torch.nn.Module,
+        n_layers: int
+    ):
+        
+        super().__init__()
+
+        self.attention = torch.nn.MultiheadAttention(
+                            embed_dim=d_model,
+                            num_heads=num_heads,
+                            batch_first=True
+                        )
+        
+        self.transformer = torch.nn.TransformerDecoder(
+                                    trans_layer,
+                                    num_layers=n_layers
+                                )
+        
+    
+    def forward(self, latent: torch.Tensor, byte: torch.Tensor) -> torch.Tensor:
+
+        # reduce space with attention
+        a = self.attention(latent, byte, byte)[0]
+        # self attend in transformer layer
+        y = self.transformer(a, a)
+
+        return y
 
 
 class TransformerPlanner(nn.Module):
@@ -220,9 +254,10 @@ class TransformerPlanner(nn.Module):
         self,
         n_track: int = 10,
         n_waypoints: int = 3,
-        d_model: int = 64,
-        n_heads: int = 4,
-        n_layers: int = 2
+        d_model: int = 384,
+        n_heads: int = 12,
+        trans_n_layer: int = 10,
+        latent_layers: int = 2
     ):
         super().__init__()
 
@@ -233,14 +268,27 @@ class TransformerPlanner(nn.Module):
 
         self.lane_encoder = PositionalEmbedding(d_model)
         self.query_embed = nn.Embedding(n_waypoints * 2, d_model)
-
+    
         trans_layer = torch.nn.TransformerDecoderLayer(
                                 d_model,
                                 nhead=n_heads,
                                 batch_first=True,
-                                dim_feedforward=4 * d_model
+                                dim_feedforward=4 * d_model,
+                                norm_first=True
                             )
-        self.transformer = torch.nn.TransformerDecoder(trans_layer, n_layers)
+
+        self.model_layers = torch.nn.ModuleList()
+        for _ in range(latent_layers):
+            
+            self.model_layers.append(
+                PerceiverBlock(
+                    d_model,
+                    n_heads,
+                    trans_layer,
+                    trans_n_layer
+                )
+            )
+
 
     def forward(
         self,
@@ -274,7 +322,7 @@ class TransformerPlanner(nn.Module):
         track_right_x_embedding = self.lane_encoder(track_right_x)
         track_right_y_embedding = self.lane_encoder(track_right_y)
 
-        # create full embedding
+        # create full embedding bytes
         track_embedding = torch.concat(
             [
                 track_left_x_embedding,
@@ -285,13 +333,15 @@ class TransformerPlanner(nn.Module):
             dim=-2
         )
 
-        # generate waypoint embeddings
+        # generate waypoint embeddings (latent)
         batch_size = track_embedding.shape[0]
         waypoint_token_batch = self.waypoint_tokens.broadcast_to((batch_size, -1))
         waypoint_embeddings = self.query_embed(waypoint_token_batch)
 
-        # forward cross attention
-        y = self.transformer(waypoint_embeddings, track_embedding)
+        y = waypoint_embeddings
+        for layer in self.model_layers:
+
+            y = layer(waypoint_embeddings, track_embedding)
 
         # post processing
         y_avg = y.mean(dim=-1)
