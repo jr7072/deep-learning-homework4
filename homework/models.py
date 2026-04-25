@@ -236,7 +236,8 @@ class TransformerPlanner(nn.Module):
         trans_layer = torch.nn.TransformerDecoderLayer(
                                 d_model,
                                 nhead=n_heads,
-                                batch_first=True
+                                batch_first=True,
+                                dim_feedforward=4 * d_model
                             )
         self.transformer = torch.nn.TransformerDecoder(trans_layer, n_layers)
 
