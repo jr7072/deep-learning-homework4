@@ -289,7 +289,18 @@ class TransformerPlanner(nn.Module):
                 )
             )
 
-        self.out = torch.nn.Linear(d_model, 2)
+        mlp_layers = [1164, 100, 50, 10, 2]
+        out_layers = list()
+
+        o = d_model
+        for layer in mlp_layers:
+            out_layers.append(
+                RESBlock(o, layer)
+            )
+            o = layer
+        
+        self.out = torch.nn.Sequential(*out_layers)
+
 
     def forward(
         self,
