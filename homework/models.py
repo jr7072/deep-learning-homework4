@@ -353,8 +353,8 @@ class TransformerPlanner(nn.Module):
         self,
         n_track: int=10,
         n_waypoints: int=3,
-        d_model: int=384,
-        n_heads: int=12,
+        d_model: int=128,
+        n_heads: int=8,
         encoder_decoder_layers: int=6,
         **kwargs
     ):
