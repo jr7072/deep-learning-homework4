@@ -473,7 +473,7 @@ if __name__ == '__main__':
     parser.add_argument('--d_model', type=int, default=64)
     parser.add_argument('--n_heads', type=int, default=4)
     parser.add_argument('--trans_n_layers', type=int, default=2)
-    parser.add_argument('--latent_layers', type=2, default=2)
+    parser.add_argument('--latent_layers', type=int, default=2)
 
     args = vars(parser.parse_args())
 
