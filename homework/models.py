@@ -285,7 +285,7 @@ class TransformerPlanner(nn.Module):
                     d_model,
                     n_heads,
                     trans_layer,
-                    trans_n_layer
+                    trans_n_layers
                 )
             )
 
