@@ -263,11 +263,11 @@ class TransformerPlanner(nn.Module):
 
         self.n_track = n_track
         self.n_waypoints = n_waypoints
-        waypoint_tokens = torch.arange(self.n_waypoints * 2)
+        waypoint_tokens = torch.arange(self.n_waypoints)
         self.register_buffer('waypoint_tokens', waypoint_tokens)
 
         self.lane_encoder = PositionalEmbedding(d_model)
-        self.query_embed = nn.Embedding(n_waypoints * 2, d_model)
+        self.query_embed = nn.Embedding(n_waypoints, d_model)
     
         trans_layer = torch.nn.TransformerDecoderLayer(
                                 d_model,
@@ -289,6 +289,7 @@ class TransformerPlanner(nn.Module):
                 )
             )
 
+        self.out = torch.nn.Linear(d_model, 2)
 
     def forward(
         self,
@@ -343,11 +344,7 @@ class TransformerPlanner(nn.Module):
 
             y = layer(y, track_embedding)
 
-        # post processing
-        y_avg = y.mean(dim=-1)
-
-        return y_avg.reshape(-1, self.n_waypoints, 2)
-    
+        return self.out(y)
 
 class CNNPlanner(torch.nn.Module):
 
