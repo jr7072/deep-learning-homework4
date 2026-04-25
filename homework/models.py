@@ -256,7 +256,7 @@ class TransformerPlanner(nn.Module):
         n_waypoints: int = 3,
         d_model: int = 384,
         n_heads: int = 12,
-        trans_n_layer: int = 10,
+        trans_n_layers: int = 10,
         latent_layers: int = 2
     ):
         super().__init__()
@@ -341,7 +341,7 @@ class TransformerPlanner(nn.Module):
         y = waypoint_embeddings
         for layer in self.model_layers:
 
-            y = layer(waypoint_embeddings, track_embedding)
+            y = layer(y, track_embedding)
 
         # post processing
         y_avg = y.mean(dim=-1)
