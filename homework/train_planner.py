@@ -56,7 +56,7 @@ def transformer_training(
         
         metric_store[mode] = PlannerMetric()
 
-    loss_func = torch.nn.functional.l1_loss
+    loss_func = torch.nn.functional.mse_loss
 
     # load optimizer
     optim = torch.optim.AdamW(model.parameters(), lr=lr)
