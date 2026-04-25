@@ -249,15 +249,113 @@ class PerceiverBlock(torch.nn.Module):
         return y
 
 
+# class TransformerPlanner(nn.Module):
+#     def __init__(
+#         self,
+#         n_track: int = 10,
+#         n_waypoints: int = 3,
+#         d_model: int = 384,
+#         n_heads: int = 12,
+#         trans_n_layers: int = 10,
+#         latent_layers: int = 2
+#     ):
+#         super().__init__()
+
+#         self.n_track = n_track
+#         self.n_waypoints = n_waypoints
+#         waypoint_tokens = torch.arange(self.n_waypoints)
+#         self.register_buffer('waypoint_tokens', waypoint_tokens)
+
+#         self.lane_encoder = PositionalEmbedding(d_model)
+#         self.query_embed = nn.Embedding(n_waypoints, d_model)
+    
+#         trans_layer = torch.nn.TransformerDecoderLayer(
+#                                 d_model,
+#                                 nhead=n_heads,
+#                                 batch_first=True,
+#                                 dim_feedforward=4 * d_model,
+#                                 norm_first=True
+#                             )
+
+#         self.model_layers = torch.nn.ModuleList()
+#         for _ in range(latent_layers):
+            
+#             self.model_layers.append(
+#                 PerceiverBlock(
+#                     d_model,
+#                     n_heads,
+#                     trans_layer,
+#                     trans_n_layers
+#                 )
+#             )
+
+#         self.out = torch.nn.Linear(d_model, 2)
+
+
+#     def forward(
+#         self,
+#         track_left: torch.Tensor,
+#         track_right: torch.Tensor,
+#         **kwargs,
+#     ) -> torch.Tensor:
+#         """
+#         Predicts waypoints from the left and right boundaries of the track.
+
+#         During test time, your model will be called with
+#         model(track_left=..., track_right=...), so keep the function signature as is.
+
+#         Args:
+#             track_left (torch.Tensor): shape (b, n_track, 2)
+#             track_right (torch.Tensor): shape (b, n_track, 2)
+
+#         Returns:
+#             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
+#         """
+        
+#         # generate embeddings for left track
+#         track_left_x = track_left[:, :, 0]
+#         track_left_y = track_left[:, :, 1]
+#         track_left_x_embedding = self.lane_encoder(track_left_x)
+#         track_left_y_embedding = self.lane_encoder(track_left_y)
+
+#         # generate embeddings for right track
+#         track_right_x = track_right[:, :, 0]
+#         track_right_y = track_right[:, :, 1]
+#         track_right_x_embedding = self.lane_encoder(track_right_x)
+#         track_right_y_embedding = self.lane_encoder(track_right_y)
+
+#         # create full embedding bytes
+#         track_embedding = torch.concat(
+#             [
+#                 track_left_x_embedding,
+#                 track_left_y_embedding,
+#                 track_right_x_embedding,
+#                 track_right_y_embedding
+#             ],
+#             dim=-2
+#         )
+
+#         # generate waypoint embeddings (latent)
+#         batch_size = track_embedding.shape[0]
+#         waypoint_token_batch = self.waypoint_tokens.broadcast_to((batch_size, -1))
+#         waypoint_embeddings = self.query_embed(waypoint_token_batch)
+
+#         y = waypoint_embeddings
+#         for layer in self.model_layers:
+
+#             y = layer(y, track_embedding)
+
+#         return self.out(y)
+
+
 class TransformerPlanner(nn.Module):
     def __init__(
         self,
-        n_track: int = 10,
-        n_waypoints: int = 3,
-        d_model: int = 384,
-        n_heads: int = 12,
-        trans_n_layers: int = 10,
-        latent_layers: int = 2
+        n_track: int=10,
+        n_waypoints: int=3,
+        d_model: int=384,
+        n_heads: int=12,
+        encoder_decoder_layers: int=6,
     ):
         super().__init__()
 
@@ -268,8 +366,18 @@ class TransformerPlanner(nn.Module):
 
         self.lane_encoder = PositionalEmbedding(d_model)
         self.query_embed = nn.Embedding(n_waypoints, d_model)
-    
-        trans_layer = torch.nn.TransformerDecoderLayer(
+
+        # prenorm encoder layer
+        encoder_layer = torch.nn.TransformerEncoderLayer(
+                                d_model,
+                                nhead=n_heads,
+                                batch_first=True,
+                                dim_feedforward=4 * d_model,
+                                norm_first=True
+                            )
+        
+        # prenorm decoder_layer
+        decoder_layer = torch.nn.TransformerDecoderLayer(
                                 d_model,
                                 nhead=n_heads,
                                 batch_first=True,
@@ -277,19 +385,25 @@ class TransformerPlanner(nn.Module):
                                 norm_first=True
                             )
 
-        self.model_layers = torch.nn.ModuleList()
-        for _ in range(latent_layers):
-            
-            self.model_layers.append(
-                PerceiverBlock(
-                    d_model,
-                    n_heads,
-                    trans_layer,
-                    trans_n_layers
-                )
-            )
+        self.encoder = torch.nn.TransformerEncoder(
+                                encoder_layer,
+                                num_layers=encoder_decoder_layers
+                            )
 
-        self.out = torch.nn.Linear(d_model, 2)
+        self.decoder = torch.nn.TransformerDecoder(
+                                decoder_layer,
+                                num_layers=encoder_decoder_layers
+                            )
+
+        out_mlp_layers = [1164, 100, 50, 10, 2]
+        o = d_model
+        out_layers = list()
+
+        for layer in out_mlp_layers:
+            out_layers.append(RESBlock(o, layer))
+            o = layer
+            
+        self.out = torch.nn.Sequential(*out_layers)
 
 
     def forward(
@@ -340,12 +454,11 @@ class TransformerPlanner(nn.Module):
         waypoint_token_batch = self.waypoint_tokens.broadcast_to((batch_size, -1))
         waypoint_embeddings = self.query_embed(waypoint_token_batch)
 
-        y = waypoint_embeddings
-        for layer in self.model_layers:
+        encoder_out = self.encoder(track_embedding)
+        decoder_out = self.decoder(waypoint_embeddings, encoder_out)
 
-            y = layer(y, track_embedding)
+        return self.out(decoder_out)
 
-        return self.out(y)
 
 class CNNPlanner(torch.nn.Module):
 

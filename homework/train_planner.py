@@ -470,10 +470,12 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--d_model', type=int, default=64)
-    parser.add_argument('--n_heads', type=int, default=4)
-    parser.add_argument('--trans_n_layers', type=int, default=2)
-    parser.add_argument('--latent_layers', type=int, default=2)
+    parser.add_argument('--d_model', type=int, required=False)
+    parser.add_argument('--n_heads', type=int, required=False)
+    parser.add_argument('--trans_n_layers', type=int, required=False)
+    parser.add_argument('--latent_layers', type=int, required=False)
+    parser.add_argument('--encoder_decoder_layers', type=int, required=False)
+
 
     args = vars(parser.parse_args())
 
