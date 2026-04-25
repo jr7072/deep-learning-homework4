@@ -356,6 +356,7 @@ class TransformerPlanner(nn.Module):
         d_model: int=384,
         n_heads: int=12,
         encoder_decoder_layers: int=6,
+        **kwargs
     ):
         super().__init__()
 
@@ -465,7 +466,8 @@ class CNNPlanner(torch.nn.Module):
     def __init__(
         self,
         in_channels: int = 3,
-        n_waypoints: int=3
+        n_waypoints: int=3,
+        **kwargs
     ):
         """
         A single model that performs segmentation and depth regression
